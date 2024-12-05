@@ -1,0 +1,184 @@
+-- Tworzenie tabeli Bandy
+CREATE TABLE Bandy (
+    nr_bandy NUMBER(2) CONSTRAINT pk_bandy PRIMARY KEY,
+    nazwa VARCHAR2(20) CONSTRAINT nn_nazwa_bandy NOT NULL,
+    teren VARCHAR2(15) CONSTRAINT uq_teren UNIQUE,
+    szef_bandy VARCHAR2(15) CONSTRAINT uq_szef_bandy UNIQUE
+);
+
+-- Tworzenie tabeli Funkcje
+CREATE TABLE Funkcje (
+    funkcja VARCHAR2(10) CONSTRAINT pk_funkcje PRIMARY KEY,
+    min_myszy NUMBER(3) CONSTRAINT ch_min_myszy CHECK (min_myszy > 5),
+    max_myszy NUMBER(3) CONSTRAINT ch_max_myszy CHECK (200 > max_myszy),
+    CONSTRAINT ch_max_gte_min_myszy CHECK (max_myszy >= min_myszy)
+);
+
+-- Tworzenie tabeli Wrogowie
+CREATE TABLE Wrogowie (
+    imie_wroga VARCHAR2(15) CONSTRAINT pk_wrogowie PRIMARY KEY,
+    stopien_wrogosci NUMBER(2) CONSTRAINT ch_stopien_wrogosci CHECK (stopien_wrogosci BETWEEN 1 AND 10),
+    gatunek VARCHAR2(15),
+    lapowka VARCHAR2(20)
+);
+
+-- Tworzenie tabeli Kocury
+CREATE TABLE Kocury (
+    imie VARCHAR2(15) CONSTRAINT nn_imie NOT NULL,
+    plec VARCHAR2(1) CONSTRAINT ch_plec CHECK (plec IN ('M', 'D')),
+    pseudo VARCHAR2(15) CONSTRAINT pk_pseudo PRIMARY KEY,
+    funkcja VARCHAR2(10) CONSTRAINT fk_funkcja REFERENCES Funkcje(funkcja),
+    szef VARCHAR2(15) CONSTRAINT fk_szef REFERENCES Kocury(pseudo),
+    w_stadku_od DATE DEFAULT SYSDATE,
+    przydzial_myszy NUMBER(3),
+    myszy_extra NUMBER(3),
+    nr_bandy NUMBER(2) CONSTRAINT fk_nr_bandy REFERENCES Bandy(nr_bandy)
+);
+
+ALTER TABLE Bandy 
+	ADD CONSTRAINT fk_szef_bandy FOREIGN KEY (szef_bandy) REFERENCES Kocury(pseudo);
+
+-- Tworzenie tabeli Wrogowie_kocurow
+CREATE TABLE Wrogowie_kocurow (
+    pseudo VARCHAR2(15) CONSTRAINT fk_pseudo_fk REFERENCES Kocury(pseudo),
+    imie_wroga VARCHAR2(15) CONSTRAINT fk_imie_wroga_fk REFERENCES Wrogowie(imie_wroga),
+    data_incydentu DATE NOT NULL,
+    opis_incydentu VARCHAR2(50),
+    PRIMARY KEY (pseudo, imie_wroga)
+);
+
+
+INSERT ALL 
+    INTO Kocury(imie, plec, pseudo, funkcja, szef, w_stadku_od, przydzial_myszy, myszy_extra, nr_bandy) 
+    VALUES ('JACEK', 'M', 'PLACEK', 'LOWCZY', NULL, '2008-12-01', 67, NULL, NULL)
+    INTO Kocury
+    VALUES ('BARI', 'M', 'RURA', 'LAPACZ', NULL, '2009-09-01', 56, NULL, NULL)
+    INTO Kocury
+    VALUES ('MICKA', 'D', 'LOLA', 'MILUSIA', NULL, '2009-10-14', 25, 47, NULL)
+    INTO Kocury
+    VALUES ('LUCEK', 'M', 'ZERO', 'KOT', NULL, '2010-03-01', 43, NULL, NULL)
+    INTO Kocury
+    VALUES ('SONIA', 'D', 'PUSZYSTA', 'MILUSIA', NULL, '2010-11-18', 20, 35, NULL)
+    INTO Kocury
+    VALUES ('LATKA', 'D', 'UCHO', 'KOT', NULL, '2011-01-01', 40, NULL, NULL)
+    INTO Kocury
+    VALUES ('DUDEK', 'M', 'MALY', 'KOT', NULL, '2011-05-15', 40, NULL, NULL)
+    INTO Kocury
+    VALUES ('MRUCZEK', 'M', 'TYGRYS', 'SZEFUNIO', NULL, '2002-01-01', 103, 33, NULL)
+    INTO Kocury
+    VALUES ('CHYTRY', 'M', 'BOLEK', 'DZIELCZY', NULL, '2002-05-05', 50, NULL, NULL)
+    INTO Kocury
+    VALUES ('KOREK', 'M', 'ZOMBI', 'BANDZIOR', NULL, '2004-03-16', 75, 13, NULL)
+    INTO Kocury
+    VALUES ('BOLEK', 'M', 'LYSY', 'BANDZIOR', NULL, '2006-08-15', 72, 21, NULL)
+    INTO Kocury
+    VALUES ('ZUZIA', 'D', 'SZYBKA', 'LOWCZY', NULL, '2006-07-21', 65, NULL, NULL)
+    INTO Kocury
+    VALUES ('RUDA', 'D', 'MALA', 'MILUSIA', NULL, '2006-09-17', 22, 42, NULL)
+    INTO Kocury
+    VALUES ('PUCEK', 'M', 'RAFA', 'LOWCZY', NULL, '2006-10-15', 65, NULL, NULL)
+    INTO Kocury
+    VALUES ('PUNIA', 'D', 'KURKA', 'LOWCZY', NULL, '2008-01-01', 61, NULL, NULL)
+    INTO Kocury
+    VALUES ('BELA', 'D', 'LASKA', 'MILUSIA', NULL, '2008-02-01', 24, 28, NULL)
+    INTO Kocury
+    VALUES ('KSAWERY', 'M', 'MAN', 'LAPACZ', NULL, '2008-07-12', 51, NULL, NULL)
+    INTO Kocury
+    VALUES ('MELA', 'D', 'DAMA', 'LAPACZ', NULL, '2008-11-01', 51, NULL, NULL)
+    SELECT * FROM Dual;
+    
+    
+INSERT ALL 
+    INTO Bandy(nr_bandy,nazwa,teren,szef_bandy)
+	VALUES (1,'SZEFOSTWO','CALOSC','TYGRYS')
+	INTO Bandy
+	VALUES (2,'CZARNI RYCERZE','POLE','LYSY')
+    INTO Bandy
+	VALUES (3,'BIALI LOWCY','SAD','ZOMBI')
+    INTO Bandy
+	VALUES (4,'LACIACI MYSLIWI','GORKA','RAFA')
+    INTO Bandy
+	VALUES (5,'ROCKERSI','ZAGRODA',NULL)
+    SELECT * FROM Dual;
+
+
+INSERT ALL 
+    INTO Wrogowie_kocurow(pseudo,imie_wroga,data_incydentu,opis_incydentu)
+	VALUES ('TYGRYS','KAZIO','2004-10-13','USILOWAL NABIC NA WIDLY')
+	INTO Wrogowie_kocurow
+	VALUES ('ZOMBI','SWAWOLNY DYZIO','2005-03-07','WYBIL OKO Z PROCY')
+    INTO Wrogowie_kocurow
+	VALUES ('BOLEK','KAZIO','2005-03-29','POSZCZUL BURKIEM')
+    INTO Wrogowie_kocurow
+	VALUES ('SZYBKA','GLUPIA ZOSKA','2006-09-12','UZYLA KOTA JAKO SCIERKI')
+    INTO Wrogowie_kocurow
+	VALUES ('MALA','CHYTRUSEK','2007-03-07','ZALECAL SIE')
+    INTO Wrogowie_kocurow
+	VALUES ('TYGRYS','DZIKI BILL','2007-06-12','USILOWAL POZBAWIC ZYCIA')
+    INTO Wrogowie_kocurow
+	VALUES ('BOLEK','DZIKI BILL','2007-11-10','ODGRYZL UCHO')
+    INTO Wrogowie_kocurow
+	VALUES ('LASKA','DZIKI BILL','2008-12-12','POGRYZL ZE LEDWO SIE WYLIZALA')
+    INTO Wrogowie_kocurow
+	VALUES ('LASKA','KAZIO','2009-01-07','ZLAPAL ZA OGON I ZROBIL WIATRAK')
+    INTO Wrogowie_kocurow
+	VALUES ('DAMA','KAZIO','2009-02-07','CHCIAL OBEDRZEC ZE SKORY')
+    INTO Wrogowie_kocurow
+	VALUES ('MAN','REKSIO','2009-04-14','WYJATKOWO NIEGRZECZNIE OBSZCZEKAL')
+    INTO Wrogowie_kocurow
+	VALUES ('LYSY','BETHOVEN','2009-05-11','NIE PODZIELIL SIE SWOJA KASZA')
+    INTO Wrogowie_kocurow
+	VALUES ('RURA','DZIKI BILL','2009-09-03','ODGRYZL OGON')
+    INTO Wrogowie_kocurow
+	VALUES ('PLACEK','BAZYLI','2010-07-12','DZIOBIAC UNIEMOZLIWIL PODEBRANIE KURCZAKA')
+    INTO Wrogowie_kocurow
+	VALUES ('PUSZYSTA','SMUKLA','2010-11-19','OBRZUCILA SZYSZKAMI')
+    INTO Wrogowie_kocurow
+	VALUES ('KURKA','BUREK','2010-12-14','POGONIL')
+    INTO Wrogowie_kocurow
+	VALUES ('MALY','CHYTRUSEK','2011-07-13','PODEBRAL PODEBRANE JAJKA')
+    INTO Wrogowie_kocurow
+	VALUES ('UCHO','SWAWOLNY DYZIO','2011-07-14','OBRZUCIL KAMIENIAMI')
+    SELECT * FROM Dual;
+
+
+    -- Zaktualizowanie numerów band dla kotów
+    UPDATE Kocury
+    SET nr_bandy = 2
+    WHERE imie IN ('JACEK', 'BARI', 'BOLEK', 'ZUZIA', 'BELA');
+    
+    UPDATE Kocury
+    SET nr_bandy = 1
+    WHERE imie IN ('MICKA', 'MRUCZEK', 'CHYTRY', 'RUDA');
+    
+    UPDATE Kocury
+    SET nr_bandy = 3
+    WHERE imie IN ('LUCEK', 'SONIA', 'KOREK', 'PUNIA');
+    
+    UPDATE Kocury
+    SET nr_bandy = 4
+    WHERE imie IN ('LATKA', 'DUDEK', 'PUCEK', 'KSAWERY', 'MELA');
+
+
+    -- Zaktualizowanie szefów dla kotów
+    UPDATE Kocury
+    SET szef = CASE
+        WHEN pseudo = 'PLACEK' THEN 'LYSY'
+        WHEN pseudo = 'RURA' THEN 'LYSY'
+        WHEN pseudo = 'LOLA' THEN 'TYGRYS'
+        WHEN pseudo = 'ZERO' THEN 'KURKA'
+        WHEN pseudo = 'PUSZYSTA' THEN 'ZOMBI'
+        WHEN pseudo = 'UCHO' THEN 'RAFA'
+        WHEN pseudo = 'MALY' THEN 'RAFA'
+        WHEN pseudo = 'BOLEK' THEN 'TYGRYS'
+        WHEN pseudo = 'ZOMBI' THEN 'TYGRYS'
+        WHEN pseudo = 'LYSY' THEN 'TYGRYS'
+        WHEN pseudo = 'SZYBKA' THEN 'LYSY'
+        WHEN pseudo = 'MALA' THEN 'TYGRYS'
+        WHEN pseudo = 'RAFA' THEN 'TYGRYS'
+        WHEN pseudo = 'KURKA' THEN 'ZOMBI'
+        WHEN pseudo = 'LASKA' THEN 'LYSY'
+        WHEN pseudo = 'MAN' THEN 'RAFA'
+        WHEN pseudo = 'DAMA' THEN 'RAFA'
+        ELSE szef
+    END;
