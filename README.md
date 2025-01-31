@@ -1,2 +1,2 @@
-# SQLQueries
-Database Programming project
+# SQL-Queries
+The task list project was created as part of learning Oracle database programming at university and is aimed at practical familiarization with the technology and principles of creating and managing databases. It contains tasks related to designing database structures, creating SQL queries, manipulating data and optimizing queries. The project uses advanced Oracle features such as stored procedures, triggers, and transaction management. The aim of the project was to develop practical skills in working with databases and to understand key aspects related to their effective use.
