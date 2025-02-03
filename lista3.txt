@@ -1,0 +1,703 @@
+-- Zad 34.
+DECLARE
+  func Kocury.funkcja%TYPE;
+BEGIN
+  SELECT funkcja INTO func 
+  FROM Kocury 
+  WHERE funkcja = '&funkcja' 
+  GROUP BY funkcja;
+  
+  DBMS_OUTPUT.PUT_LINE(func);
+EXCEPTION
+  WHEN OTHERS THEN  
+    DBMS_OUTPUT.PUT_LINE('BRAK TAKIEGO KOTA');
+END;
+/
+
+-- Zad 35.
+DECLARE
+  kocur Kocury%ROWTYPE;
+  nf BOOLEAN:= TRUE;
+BEGIN
+  SELECT * INTO kocur 
+  FROM Kocury 
+  WHERE pseudo = '&pseudo';
+
+  DBMS_OUTPUT.PUT_LINE(kocur.imie);
+  IF (kocur.przydzial_myszy + NVL(kocur.myszy_extra, 0)) * 12 > 700 THEN
+    nf := FALSE;
+    DBMS_OUTPUT.PUT_LINE('calkowity roczny przydzial myszy > 700');
+  END IF;
+
+  IF kocur.imie LIKE '%A%' THEN
+    nf := FALSE;
+    DBMS_OUTPUT.PUT_LINE('imie zawiera litere A');
+  END IF;
+
+  IF EXTRACT(MONTH FROM kocur.w_stadku_od) = 5 THEN
+    nf := FALSE;
+    DBMS_OUTPUT.PUT_LINE('maj jest miesiacem przystapienia do stada');
+  END IF;
+
+  IF nf THEN
+    DBMS_OUTPUT.PUT_LINE('nie odpowiada kryteriom');
+  END IF;
+  EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('BRAK TAKIEGO KOTA');
+END;
+/
+
+-- Zad 36.
+DECLARE
+  CURSOR kocuryC IS SELECT * FROM Kocury;
+  kocur kocuryC%ROWTYPE;
+  suma NUMBER;
+  maxf NUMBER;
+  pp NUMBER;
+  liczba_zmian NUMBER := 0;
+  calkowita_suma NUMBER;
+  
+BEGIN
+  LOOP
+    SELECT SUM(przydzial_myszy) INTO suma 
+    FROM Kocury;
+    EXIT WHEN suma > 1050;
+    OPEN kocuryC;
+
+    LOOP
+      FETCH kocuryC INTO kocur;
+      EXIT WHEN kocuryC%NOTFOUND;
+      SELECT max_myszy INTO maxf FROM Funkcje WHERE funkcja = kocur.funkcja;
+      pp := kocur.przydzial_myszy * 1.1;
+      
+      IF pp > maxf THEN
+        pp := maxf;
+      END IF;
+
+      IF pp != kocur.przydzial_myszy THEN
+        UPDATE Kocury
+        SET przydzial_myszy = pp
+        WHERE pseudo = kocur.pseudo;
+        liczba_zmian := liczba_zmian + 1;
+      END IF;
+
+    END LOOP;
+    CLOSE kocuryC;
+  END LOOP;
+SELECT SUM(przydzial_myszy) INTO calkowita_suma FROM Kocury;
+
+  DBMS_OUTPUT.PUT_LINE('Calk. przydzial w stadku: ' || calkowita_suma||' Zmian: ' || liczba_zmian);
+
+  FOR rec IN (SELECT imie, przydzial_myszy FROM Kocury ORDER BY przydzial_myszy DESC) LOOP
+    DBMS_OUTPUT.PUT_LINE(rec.imie || ' ' || rec.przydzial_myszy);
+  END LOOP;
+
+  ROLLBACK;
+END;
+/
+
+-- Zad 37.
+DECLARE
+  CURSOR topC IS
+    SELECT pseudo, przydzial_myszy + NVL(myszy_extra, 0) "zjada"
+    FROM Kocury
+    ORDER BY 2 DESC;
+  top topC%ROWTYPE;
+BEGIN
+  OPEN topC;
+  DBMS_OUTPUT.PUT_LINE('Nr   Pseudonim   Zjada');
+  DBMS_OUTPUT.PUT_LINE('----------------------');
+  FOR i IN 1..5
+  LOOP
+    FETCH topC INTO top;
+    EXIT WHEN topC%NOTFOUND;
+    DBMS_OUTPUT.PUT_LINE(TO_CHAR(i) ||'    '|| RPAD(top.pseudo, 8) || '    ' || LPAD(TO_CHAR(top."zjada"), 5));
+  END LOOP;
+END;
+/
+
+-- Zad 38.
+DECLARE
+  CURSOR kotyC IS SELECT * FROM Kocury 
+  WHERE funkcja = 'KOT' OR funkcja = 'MILUSIA';
+  kot kotyC%ROWTYPE;
+  pseudoSzefa Kocury.pseudo%TYPE;
+  singleRow VARCHAR2(500);
+  deep NUMBER:= '&liczba_przelozonych';
+  i NUMBER:=0;
+BEGIN
+  OPEN kotyC;
+
+  singlerow := RPAD('IMIE', 8);
+  FOR k IN 1..deep
+  LOOP
+    singlerow := singlerow || ' | ' || RPAD('SZEF ' || TO_CHAR(k), 8);
+  END LOOP;
+  DBMS_OUTPUT.PUT_LINE(singlerow || '|');
+  singlerow := '';
+
+  singlerow := RPAD('-', 8, '-');
+  FOR k IN 1..deep
+  LOOP
+    singlerow := singlerow || '-|-' || RPAD('-', 8, '-');
+  END LOOP;
+  DBMS_OUTPUT.PUT_LINE(singlerow || '|');
+  singlerow := '';
+
+  LOOP
+    FETCH kotyC INTO kot;
+    EXIT WHEN kotyC%NOTFOUND;
+
+    singlerow := singlerow || RPAD(kot.imie, 8);
+
+    LOOP
+      EXIT WHEN NOT i < deep;
+      BEGIN
+        SELECT * INTO kot FROM Kocury WHERE pseudo = kot.szef;
+        singlerow := singlerow || ' | ' || RPAD(kot.imie, 8);
+        EXCEPTION
+        WHEN OTHERS THEN
+        singlerow := singlerow || ' | ' || RPAD(' ', 8);
+      END;
+      i := i + 1;
+
+    END LOOP;
+    DBMS_OUTPUT.PUT_LINE(singlerow || '|');
+    i := 0;
+    singlerow := '';
+  END LOOP;
+END;
+/
+
+-- Zad 39.
+DECLARE
+  CURSOR bandyC IS SELECT * FROM Bandy;
+  banda bandy%ROWTYPE;
+
+  nr bandy.nr_bandy%TYPE;
+  nazwa_bandy bandy.nazwa%TYPE;
+  teren_bandy bandy.teren%TYPE;
+
+  banda_nr_exc EXCEPTION;
+  banda_exists EXCEPTION;
+  nazwa_exists EXCEPTION;
+  teren_exists EXCEPTION;
+
+  v_banda_exists BOOLEAN := FALSE;
+  v_nazwa_exists BOOLEAN := FALSE;
+  v_teren_exists BOOLEAN := FALSE;
+  v_invalid_nr BOOLEAN := FALSE;
+
+BEGIN
+  nr := '&nr_bandy';
+  nazwa_bandy := '&nazwa_bandy';
+  teren_bandy := '&teren_bandy';
+
+  IF nr <= 0 THEN
+    v_invalid_nr := TRUE;
+  END IF;
+
+  OPEN bandyC;
+
+  LOOP
+    FETCH bandyC INTO banda;
+    EXIT WHEN bandyC%NOTFOUND;
+
+    IF nr = banda.nr_bandy THEN
+      v_banda_exists := TRUE;
+    END IF;
+    IF nazwa_bandy = banda.nazwa THEN
+      v_nazwa_exists := TRUE;
+    END IF;
+    IF teren_bandy = banda.teren THEN
+      v_teren_exists := TRUE;
+    END IF;
+  END LOOP;
+
+  CLOSE bandyC;
+
+  IF NOT v_banda_exists AND NOT v_nazwa_exists AND NOT v_teren_exists AND NOT v_invalid_nr THEN
+    INSERT INTO Bandy (nr_bandy, nazwa, teren, szef_bandy)
+    VALUES (nr, nazwa_bandy, teren_bandy, NULL);
+
+    DBMS_OUTPUT.PUT_LINE('Banda o numerze ' || nr || ' została dodana pomyślnie.');
+    COMMIT;
+  ELSE
+    IF v_banda_exists THEN
+      DBMS_OUTPUT.PUT_LINE('Banda o numerze ' || TO_CHAR(nr) || ' już istnieje.');
+    END IF;
+
+    IF v_nazwa_exists THEN
+      DBMS_OUTPUT.PUT_LINE('Banda o nazwie ' || TO_CHAR(nazwa_bandy) || ' już istnieje.');
+    END IF;
+
+    IF v_teren_exists THEN
+      DBMS_OUTPUT.PUT_LINE('Banda o terenie ' || TO_CHAR(teren_bandy) || ' już istnieje.');
+    END IF;
+
+    IF v_invalid_nr THEN
+      DBMS_OUTPUT.PUT_LINE('Numer bandy nie może być mniejszy lub równy 0.');
+    END IF;
+  END IF;
+
+EXCEPTION
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('Błąd: ' || SQLERRM);
+    ROLLBACK;
+END;
+/
+
+-- Zad 40.
+CREATE OR REPLACE PROCEDURE dodaj_bande (
+  p_nr_bandy IN bandy.nr_bandy%TYPE,
+  p_nazwa_bandy IN bandy.nazwa%TYPE,
+  p_teren_bandy IN bandy.teren%TYPE
+) IS
+  CURSOR bandyC IS SELECT * FROM Bandy;
+  banda bandy%ROWTYPE;
+
+  v_banda_exists BOOLEAN := FALSE;
+  v_nazwa_exists BOOLEAN := FALSE;
+  v_teren_exists BOOLEAN := FALSE;
+  v_invalid_nr BOOLEAN := FALSE;
+
+BEGIN
+  IF p_nr_bandy <= 0 THEN
+    v_invalid_nr := TRUE;
+  END IF;
+
+  OPEN bandyC;
+
+  LOOP
+    FETCH bandyC INTO banda;
+    EXIT WHEN bandyC%NOTFOUND;
+
+    IF p_nr_bandy = banda.nr_bandy THEN
+      v_banda_exists := TRUE;
+    END IF;
+    IF p_nazwa_bandy = banda.nazwa THEN
+      v_nazwa_exists := TRUE;
+    END IF;
+    IF p_teren_bandy = banda.teren THEN
+      v_teren_exists := TRUE;
+    END IF;
+  END LOOP;
+
+  CLOSE bandyC;
+
+  IF NOT v_banda_exists AND NOT v_nazwa_exists AND NOT v_teren_exists AND NOT v_invalid_nr THEN
+    INSERT INTO Bandy (nr_bandy, nazwa, teren, szef_bandy)
+    VALUES (p_nr_bandy, p_nazwa_bandy, p_teren_bandy, NULL);
+
+    DBMS_OUTPUT.PUT_LINE('Banda o numerze ' || p_nr_bandy || ' została dodana pomyślnie.');
+    COMMIT;
+  ELSE
+    -- Wypisanie wszystkich błędów
+    IF v_banda_exists THEN
+      DBMS_OUTPUT.PUT_LINE('Banda o numerze ' || TO_CHAR(p_nr_bandy) || ' już istnieje.');
+    END IF;
+
+    IF v_nazwa_exists THEN
+      DBMS_OUTPUT.PUT_LINE('Banda o nazwie ' || TO_CHAR(p_nazwa_bandy) || ' już istnieje.');
+    END IF;
+
+    IF v_teren_exists THEN
+      DBMS_OUTPUT.PUT_LINE('Banda o terenie ' || TO_CHAR(p_teren_bandy) || ' już istnieje.');
+    END IF;
+
+    IF v_invalid_nr THEN
+      DBMS_OUTPUT.PUT_LINE('Numer bandy nie może być mniejszy lub równy 0.');
+    END IF;
+  END IF;
+
+EXCEPTION
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('Błąd: ' || SQLERRM);
+    ROLLBACK;
+END dodaj_bande;
+/
+
+-- Zad 41.
+CREATE OR REPLACE TRIGGER trg_increment_number
+BEFORE INSERT ON Bandy
+FOR EACH ROW
+DECLARE
+  v_max_nr_bandy Bandy.nr_bandy%TYPE;
+BEGIN
+  SELECT NVL(MAX(nr_bandy), 0) + 1
+  INTO v_max_nr_bandy
+  FROM Bandy;
+
+  :NEW.nr_bandy := v_max_nr_bandy;
+END;
+/
+
+-- TEST
+BEGIN
+  dodaj_bande(NULL, 'KAPTURNICY', 'PUSZCZA');
+END;
+SELECT * FROM bandy;
+
+ROLLBACK;
+
+-- Zad 42A.
+CREATE OR REPLACE PACKAGE wirus AS
+  active BOOLEAN := FALSE;
+  down BOOLEAN := FALSE;
+  mutex BOOLEAN := FALSE;
+  min_przydzial NUMBER;
+END;
+
+CREATE OR REPLACE PACKAGE BODY wirus AS
+BEGIN
+  mutex := FALSE;
+END;
+
+CREATE OR REPLACE TRIGGER wirus_set
+BEFORE UPDATE ON Kocury
+BEGIN
+  SELECT przydzial_myszy INTO wirus.min_przydzial FROM Kocury WHERE pseudo = 'TYGRYS';
+END;
+
+CREATE OR REPLACE TRIGGER wirus_przed
+BEFORE UPDATE ON Kocury
+FOR EACH ROW
+  BEGIN
+    IF :NEW.funkcja = 'MILUSIA' AND NOT wirus.mutex THEN
+      wirus.active := TRUE;
+
+      IF :NEW.przydzial_myszy < :OLD.przydzial_myszy THEN
+        :NEW.przydzial_myszy := :OLD.przydzial_myszy;
+      END IF;
+      IF :NEW.przydzial_myszy - :OLD.przydzial_myszy <  0.1 * wirus.min_przydzial THEN
+        :NEW.przydzial_myszy := :NEW.przydzial_myszy + 0.1 * wirus.min_przydzial ;
+        :NEW.myszy_extra := :NEW.myszy_extra + 5;
+        wirus.down := TRUE;
+      END IF;
+    END IF;
+  END;
+
+CREATE OR REPLACE TRIGGER wirus_po
+AFTER UPDATE ON Kocury
+  BEGIN
+      IF wirus.active THEN
+        wirus.mutex := TRUE;
+        wirus.active := FALSE;
+        IF wirus.down THEN
+          wirus.down := FALSE;
+          UPDATE kocury SET przydzial_myszy = przydzial_myszy - 0.1 * wirus.min_przydzial WHERE pseudo = 'TYGRYS';
+        ELSE
+          UPDATE kocury SET myszy_extra = myszy_extra + 5 WHERE pseudo = 'TYGRYS';
+        END IF;
+        wirus.mutex := FALSE;
+      END IF;
+  END;
+
+ALTER TRIGGER wirus_set ENABLE;
+ALTER TRIGGER wirus_przed ENABLE;
+ALTER TRIGGER wirus_po ENABLE;
+
+ALTER TRIGGER wirus_set DISABLE;
+ALTER TRIGGER wirus_przed DISABLE;
+ALTER TRIGGER wirus_po DISABLE;
+
+SELECT * FROM kocury WHERE funkcja = 'MILUSIA';
+UPDATE kocury
+SET przydzial_myszy = 20
+WHERE funkcja = 'MILUSIA';
+ROLLBACK;
+
+-- Zad 42B.
+CREATE OR REPLACE TRIGGER wirus_compound
+FOR UPDATE ON Kocury
+COMPOUND TRIGGER
+  active BOOLEAN:=FALSE;
+  down BOOLEAN:=FALSE;
+  min_przydzial NUMBER;
+
+  BEFORE STATEMENT IS
+  BEGIN
+    SELECT 0.1 * przydzial_myszy INTO min_przydzial FROM Kocury WHERE pseudo = 'TYGRYS';
+  END BEFORE STATEMENT;
+
+  BEFORE EACH ROW IS
+  BEGIN
+    IF :NEW.funkcja = 'MILUSIA' THEN
+      active := TRUE;
+
+      IF (:NEW.przydzial_myszy < :OLD.przydzial_myszy) THEN
+        :NEW.przydzial_myszy := :OLD.przydzial_myszy;
+      END IF;
+      IF :NEW.przydzial_myszy - :OLD.przydzial_myszy <  min_przydzial THEN
+        :NEW.przydzial_myszy := :NEW.przydzial_myszy + 0.1 * wirus.min_przydzial ;
+        :NEW.myszy_extra := :NEW.myszy_extra + 5;
+        down := TRUE;
+      END IF;
+    END IF;
+  END BEFORE EACH ROW;
+
+  AFTER EACH ROW IS
+  BEGIN
+    NULL;
+  END AFTER EACH ROW;
+
+  AFTER STATEMENT IS
+  BEGIN
+    IF active THEN
+      IF down THEN
+        UPDATE kocury SET przydzial_myszy = przydzial_myszy - min_przydzial WHERE pseudo = 'TYGRYS';
+      ELSE
+        UPDATE kocury SET myszy_extra = myszy_extra + 5 WHERE pseudo = 'TYGRYS';
+      END IF;
+    END IF;
+    active := FALSE;
+    down := FALSE;
+  END AFTER STATEMENT;
+END;
+
+ALTER TRIGGER wirus_compound DISABLE;
+
+SELECT * FROM kocury WHERE funkcja = 'MILUSIA';
+UPDATE kocury
+SET przydzial_myszy = przydzial_myszy + 1
+WHERE funkcja = 'MILUSIA';
+ROLLBACK;
+
+-- Zad 43.
+DECLARE
+  CURSOR bandyC IS SELECT * FROM Bandy ORDER BY nazwa;
+  banda bandy%ROWTYPE;
+  CURSOR funkcjeC IS SELECT * FROM Funkcje ORDER BY funkcja;
+  funkcja funkcjeC%ROWTYPE;
+  suma NUMBER;
+  singlerow VARCHAR2(500);
+BEGIN
+
+  singlerow := RPAD('NAZWA BANDY', 15);
+  singlerow := singlerow || ' | ' || RPAD('PLEC', 5);
+  OPEN funkcjeC;
+  LOOP
+    FETCH funkcjeC INTO funkcja;
+    EXIT WHEN funkcjeC%NOTFOUND;
+    singlerow := singlerow || ' | ' || RPAD(funkcja.funkcja, 10);
+  END LOOP;
+  CLOSE funkcjeC;
+  singlerow := singlerow || ' | ' || RPAD('SUMA', 10);
+  DBMS_OUTPUT.PUT_LINE(singlerow);
+  singlerow:='';
+
+  singlerow := RPAD('-', 15, '-');
+  singlerow := singlerow || '-|-' || RPAD('-', 5, '-');
+  OPEN funkcjeC;
+  LOOP
+    FETCH funkcjeC INTO funkcja;
+    EXIT WHEN funkcjeC%NOTFOUND;
+    singlerow := singlerow || '-|-' || RPAD('-', 10, '-');
+  END LOOP;
+  CLOSE funkcjeC;
+  singlerow := singlerow || '-|-' || RPAD('-', 10, '-');
+  DBMS_OUTPUT.PUT_LINE(singlerow);
+  singlerow:='';
+
+  OPEN bandyc;
+  LOOP
+    FETCH bandyC INTO banda;
+    EXIT WHEN bandyC%NOTFOUND;
+
+    singlerow := RPAD(banda.nazwa, 15);
+    singlerow := singlerow || ' | ' || RPAD('KOTKA', 5);
+
+    OPEN funkcjeC;
+    LOOP
+      FETCH funkcjeC INTO funkcja;
+      EXIT WHEN funkcjeC%NOTFOUND;
+      SELECT NVL(SUM(przydzial_myszy + NVL(myszy_extra, 0)), 0) INTO suma
+      FROM Kocury
+      WHERE nr_bandy = banda.nr_bandy
+            AND funkcja = funkcja.funkcja
+            AND plec = 'D';
+      singlerow := singlerow || ' | ' || RPAD(TO_CHAR(suma), 10);
+    END LOOP;
+    CLOSE funkcjeC;
+
+    SELECT NVL(SUM(przydzial_myszy + NVL(myszy_extra, 0)), 0) INTO suma
+    FROM Kocury
+    WHERE nr_bandy = banda.nr_bandy
+          AND plec = 'D';
+    singlerow := singlerow || ' | ' || RPAD(TO_CHAR(suma), 10);
+    DBMS_OUTPUT.PUT_LINE(singlerow);
+    singlerow:='';
+
+    singlerow := RPAD(banda.nazwa, 15);
+    singlerow := singlerow || ' | ' || RPAD('KOCUR', 5);
+
+    OPEN funkcjeC;
+    LOOP
+      FETCH funkcjeC INTO funkcja;
+      EXIT WHEN funkcjeC%NOTFOUND;
+      SELECT NVL(SUM(przydzial_myszy + NVL(myszy_extra, 0)), 0) INTO suma
+      FROM Kocury
+      WHERE nr_bandy = banda.nr_bandy
+            AND funkcja = funkcja.funkcja
+            AND plec = 'M';
+      singlerow := singlerow || ' | ' || RPAD(TO_CHAR(suma), 10);
+    END LOOP;
+    CLOSE funkcjeC;
+    SELECT NVL(SUM(przydzial_myszy + NVL(myszy_extra, 0)), 0) INTO suma
+    FROM Kocury
+    WHERE nr_bandy = banda.nr_bandy
+          AND plec = 'M';
+    singlerow := singlerow || ' | ' || RPAD(TO_CHAR(suma), 10);
+    DBMS_OUTPUT.PUT_LINE(singlerow);
+    singlerow:='';
+  END LOOP;
+  CLOSE bandyC;
+
+  singlerow := RPAD('Z', 15, '-');
+  singlerow := singlerow || '-|-' || RPAD('-', 5, '-');
+  OPEN funkcjeC;
+  LOOP
+    FETCH funkcjeC INTO funkcja;
+    EXIT WHEN funkcjeC%NOTFOUND;
+    singlerow := singlerow || '-|-' || RPAD('-', 10, '-');
+  END LOOP;
+  CLOSE funkcjeC;
+  singlerow := singlerow || '-|-' || RPAD('-', 10, '-');
+  DBMS_OUTPUT.PUT_LINE(singlerow);
+  singlerow:='';
+
+  singlerow := RPAD('ZJADA RAZEM', 15);
+  singlerow := singlerow || ' | ' || RPAD(' ', 5);
+
+  OPEN funkcjeC;
+  LOOP
+    FETCH funkcjeC INTO funkcja;
+    EXIT WHEN funkcjeC%NOTFOUND;
+    SELECT NVL(SUM(przydzial_myszy + NVL(myszy_extra, 0)), 0) INTO suma
+    FROM Kocury
+    WHERE funkcja = funkcja.funkcja;
+    singlerow := singlerow || ' | ' || RPAD(TO_CHAR(suma), 10);
+  END LOOP;
+  CLOSE funkcjeC;
+  SELECT NVL(SUM(przydzial_myszy + NVL(myszy_extra, 0)), 0) INTO suma
+  FROM Kocury;
+  singlerow := singlerow || ' | ' || RPAD(TO_CHAR(suma), 10);
+  DBMS_OUTPUT.PUT_LINE(singlerow);
+  singlerow:='';
+END;
+
+-- Zad 44.
+CREATE OR REPLACE FUNCTION podatek(pseudonim VARCHAR2, inny NUMBER := 0)
+  RETURN NUMBER AS
+  podstawowy NUMBER;
+  podwladni NUMBER;
+  wrogowie NUMBER;
+  BEGIN
+    SELECT 0.05 * przydzial_myszy INTO podstawowy FROM Kocury WHERE pseudo = pseudonim;
+    SELECT COUNT(*) INTO podwladni FROM Kocury WHERE szef = pseudonim;
+    SELECT COUNT(*) INTO wrogowie FROM Wrogowie_kocurow WHERE pseudo = pseudonim;
+
+    IF podwladni > 0 THEN
+      podwladni := 0;
+    ELSE
+      podwladni := 2;
+    END IF;
+
+    IF wrogowie > 0 THEN
+      wrogowie := 0;
+    ELSE
+      wrogowie := 1;
+    END IF;
+
+    RETURN podstawowy + podwladni + wrogowie + inny;
+  END;
+
+SELECT podatek('PUSZYSTA') FROM dual;
+
+-- Zad 45.
+CREATE TABLE Dodatki_extra(pseudo VARCHAR2(15), dodatek NUMBER);
+
+CREATE OR REPLACE TRIGGER zemsta_tygrysa
+FOR UPDATE ON Kocury
+COMPOUND TRIGGER
+  active BOOLEAN:=FALSE;
+  sqlQuery VARCHAR2(50);
+  exist NUMBER;
+  CURSOR milusieC IS SELECT * FROM Kocury WHERE funkcja = 'MILUSIE';
+  milusie milusieC%ROWTYPE;
+
+  BEFORE STATEMENT IS
+  BEGIN
+    NULL;
+  END BEFORE STATEMENT;
+
+  BEFORE EACH ROW IS
+  BEGIN
+    IF :NEW.funkcja = 'MILUSIA' AND NOT SYS.LOGIN_USER = 'TYGRYS' THEN
+      active := TRUE;
+    END IF;
+  END BEFORE EACH ROW;
+
+  AFTER EACH ROW IS
+  BEGIN
+    NULL;
+  END AFTER EACH ROW;
+
+  AFTER STATEMENT IS
+
+  BEGIN
+    IF active THEN
+      OPEN milusieC;
+
+      LOOP
+        FETCH milusieC INTO milusie;
+        EXIT WHEN milusieC%NOTFOUND;
+
+        SELECT COUNT(*) INTO exist FROM dodatki_extra WHERE pseudo = milusie.pseudo;
+        IF exist > 0 THEN
+          sqlquery := 'UPDATE Dodatki_extra SET dodatek = dodatek - 10 WHERE funkcja = ''MILUSIA'';';
+        ELSE
+          sqlquery := 'INSERT INTO Dodatki_extra VALUES (' || TO_CHAR(milusie.pseudo) ||', -10);';
+        END IF;
+
+        EXECUTE IMMEDIATE sqlquery;
+      END LOOP;
+
+      active := FALSE;
+    END IF;
+  END AFTER STATEMENT;
+END;
+
+-- Zad 46.
+CREATE TABLE Log(kto VARCHAR2(20), kiedy DATE, kotu VARCHAR2(10), operacja VARCHAR2(2000));
+DROP TABLE Log;
+
+CREATE OR REPLACE TRIGGER constrain
+BEFORE INSERT OR UPDATE ON Kocury
+FOR EACH ROW
+  DECLARE
+    min_num NUMBER;
+    max_num NUMBER;
+    operation VARCHAR2;
+  BEGIN
+    SELECT min_myszy INTO min_num FROM Funkcje WHERE funkcja = :NEW.funkcja;
+    SELECT max_myszy INTO max_num FROM Funkcje WHERE funkcja = :NEW.funkcja;
+
+    operation := 'INSERTING';
+    IF UPDATING THEN
+      operation := 'UPDATING';
+    END IF;
+
+    IF :NEW.przydzial_myszy < min_num OR :NEW.przydzial_myszy > max_num THEN
+      INSERT INTO Log VALUES (SYS.LOGIN_USER, CURRENT_DATE, :NEW.pseudo, operation);
+      :NEW.przydzial_myszy := :OLD.przydzial_myszy;
+     END IF;
+  END;
+
+UPDATE kocury
+SET przydzial_myszy = 31
+WHERE pseudo = 'PUSZYSTA';
+SELECT * FROM Log;
+SELECT * FROM kocury WHERE pseudo = 'PUSZYSTA';
+DELETE FROM LOG;

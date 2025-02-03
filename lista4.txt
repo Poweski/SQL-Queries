@@ -1,0 +1,788 @@
+-- Zad 47.
+DROP TABLE IncydentT CASCADE CONSTRAINTS;
+DROP TABLE WpisT CASCADE CONSTRAINTS;
+DROP TABLE PlebsT CASCADE CONSTRAINTS;
+DROP TABLE ElitaT CASCADE CONSTRAINTS;
+DROP TABLE KocuryT1 CASCADE CONSTRAINTS FORCE;
+
+SELECT object_name, object_type
+FROM user_objects
+WHERE object_type IN ('TYPE', 'TABLE');
+
+DESC KOCURYT;
+
+DROP TRIGGER elita_trg;
+DROP TRIGGER plebs_trg;
+
+DROP TYPE BODY IncydentO;
+DROP TYPE BODY WpisO;
+DROP TYPE BODY PlebsO;
+DROP TYPE BODY ElitaO;
+DROP TYPE BODY KocuryO;
+
+DROP TYPE IncydentO FORCE;
+DROP TYPE WpisO FORCE;
+DROP TYPE PlebsO FORCE;
+DROP TYPE ElitaO FORCE;
+DROP TYPE KocuryO FORCE;
+
+ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD';
+
+CREATE OR REPLACE TYPE KocuryO AS OBJECT
+(
+ imie VARCHAR2(15),
+ plec VARCHAR2(1),
+ pseudo VARCHAR2(10),
+ funkcja VARCHAR2(10),
+ szef REF KocuryO,
+ w_stadku_od DATE,
+ przydzial_myszy NUMBER(3),
+ myszy_extra NUMBER(3),
+ nr_bandy NUMBER(2),
+ MEMBER FUNCTION w_stadku_od_format RETURN VARCHAR2,
+ MEMBER FUNCTION pelny_przydzial RETURN NUMBER
+);
+/
+
+CREATE OR REPLACE TYPE BODY KocuryO AS
+  MEMBER FUNCTION w_stadku_od_format RETURN VARCHAR2 IS
+    BEGIN
+      RETURN TO_CHAR(w_stadku_od, 'yyyy-mm-dd');
+    END w_stadku_od_format;
+
+  MEMBER FUNCTION pelny_przydzial RETURN NUMBER IS
+    BEGIN
+      RETURN przydzial_myszy + NVL(myszy_extra, 0);
+    END pelny_przydzial;
+
+END;
+/
+
+CREATE OR REPLACE TYPE PlebsO AS OBJECT
+(
+  idn INTEGER,
+  kot REF KocuryO,
+  MEMBER FUNCTION dane_o_kocie RETURN VARCHAR2
+);
+/
+
+CREATE OR REPLACE TYPE BODY PlebsO AS
+  MEMBER FUNCTION dane_o_kocie RETURN VARCHAR2 IS
+      text VARCHAR2(100);
+    BEGIN
+      SELECT 'IMIE: ' || DEREF(kot).imie || ' PSEUDO ' || DEREF(kot).pseudo INTO text FROM dual;
+      RETURN text;
+    END dane_o_kocie;
+    
+END;
+/
+
+CREATE OR REPLACE TYPE ElitaO AS OBJECT
+(
+  idn INTEGER,
+  kot REF KocuryO,
+  sluga REF PlebsO,
+  MEMBER FUNCTION pobierz_sluge RETURN REF PlebsO
+);
+/
+
+CREATE OR REPLACE TYPE BODY ElitaO AS
+  MEMBER FUNCTION pobierz_sluge RETURN REF PlebsO IS
+    BEGIN
+      RETURN sluga;
+    END pobierz_sluge;
+    
+END;
+/
+
+CREATE OR REPLACE TYPE IncydentO AS OBJECT
+(
+  idn Integer,
+  kot REF KocuryO,
+  imie_wroga VARCHAR2(15),
+  data_incydentu DATE,
+  opis_incydentu VARCHAR2(50),
+  MEMBER FUNCTION opis_format RETURN VARCHAR2
+);
+/
+
+CREATE OR REPLACE TYPE BODY IncydentO AS
+  MEMBER FUNCTION opis_format RETURN VARCHAR2 IS
+  BEGIN
+    RETURN 'Kot miał incydent z wrogiem ' || imie_wroga 
+           || ' dnia ' || TO_CHAR(data_incydentu, 'YYYY-MM-DD') 
+           || '. Szczegóły: ' || opis_incydentu;
+  END opis_format;
+  
+END;
+/
+
+CREATE OR REPLACE TYPE WpisO AS OBJECT
+(
+  idn INTEGER,
+  dataWprowadzenia DATE,
+  dataUsuniecia DATE,
+  kot REF ElitaO,
+  MEMBER PROCEDURE wyprowadz_mysz(dat DATE)
+);
+/
+
+CREATE OR REPLACE TYPE BODY WpisO AS
+  MEMBER PROCEDURE wyprowadz_mysz(dat DATE) IS
+  BEGIN
+    dataUsuniecia := NVL(dataUsuniecia, dat);
+  END;
+END;
+/
+
+CREATE TABLE KocuryT1 OF KocuryO
+(CONSTRAINT KocuryT1_key PRIMARY KEY (pseudo),
+ SCOPE FOR (szef) IS KocuryT1
+ );
+
+CREATE TABLE PlebsT OF PlebsO
+(CONSTRAINT PlebsT_key PRIMARY KEY (idn));
+
+CREATE TABLE ElitaT OF ElitaO
+(CONSTRAINT ElitaT_key PRIMARY KEY (idn));
+
+CREATE TABLE IncydentT OF IncydentO
+(CONSTRAINT IncydentT_key PRIMARY KEY (idn));
+
+CREATE TABLE WpisT OF WpisO
+(CONSTRAINT WpisT_key PRIMARY KEY (idn));
+
+CREATE OR REPLACE TRIGGER elita_trg
+    BEFORE INSERT OR UPDATE
+    ON ElitaT
+    FOR EACH ROW
+DECLARE
+    countElita NUMBER;
+BEGIN
+    SELECT COUNT(*)
+    INTO countElita
+    FROM ElitaT E
+    WHERE DEREF(E.kot).pseudo = DEREF(:NEW.kot).pseudo;
+    IF countElita > 0 THEN
+        RAISE_APPLICATION_ERROR(-20000, 'Kot należy już do plebsu.');
+    END IF;
+    
+    SELECT COUNT(*)
+    INTO countElita
+    FROM PlebsT P
+    WHERE DEREF(P.kot).pseudo = DEREF(:NEW.kot).pseudo;
+    IF countElita > 0 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Kot należy już do elity.');
+    END IF;
+END;
+/
+
+CREATE OR REPLACE TRIGGER plebs_trg
+    BEFORE INSERT OR UPDATE
+    ON PlebsT
+    FOR EACH ROW
+DECLARE
+    countPlebs NUMBER;
+BEGIN
+    SELECT COUNT(*)
+    INTO countPlebs
+    FROM ElitaT E
+    WHERE DEREF(E.kot).pseudo = DEREF(:NEW.kot).pseudo;
+    IF countPlebs > 0 THEN
+        RAISE_APPLICATION_ERROR(-20003, 'Kot należy już do elity.');
+    END IF;
+
+    SELECT COUNT(*)
+    INTO countPlebs
+    FROM PlebsT P
+    WHERE DEREF(P.kot).pseudo = DEREF(:NEW.kot).pseudo;
+    IF countPlebs > 0 THEN
+        RAISE_APPLICATION_ERROR(-20004, 'Kot należy już do plebsu.');
+    END IF;
+END;
+/
+
+INSERT INTO KocuryT1 VALUES (KocuryO('JACEK','M','PLACEK','LOWCZY',NULL, '2008-12-01', 67, NULL, 2));
+INSERT INTO KocuryT1 VALUES (KocuryO('BARI','M','RURA','LAPACZ',NULL,'2009-09-01', 56, NULL, 2));
+INSERT INTO KocuryT1 VALUES (KocuryO('MICKA','D','LOLA','MILUSIA',NULL,'2009-10-14', 25, 47, 1));
+INSERT INTO KocuryT1 VALUES (KocuryO('LUCEK','M','ZERO','KOT',NULL,'2010-03-01', 43, NULL, 3));
+INSERT INTO KocuryT1 VALUES (KocuryO('SONIA','D','PUSZYSTA','MILUSIA',NULL,'2010-11-18', 20, 35, 3));
+INSERT INTO KocuryT1 VALUES (KocuryO('LATKA','D','UCHO','KOT',NULL,'2011-01-01', 40, NULL, 4));
+INSERT INTO KocuryT1 VALUES (KocuryO('DUDEK','M','MALY','KOT',NULL,'2011-05-15', 40, NULL, 4));
+INSERT INTO KocuryT1 VALUES (KocuryO('MRUCZEK','M','TYGRYS','SZEFUNIO',NULL,'2002-01-01',103,33,1));
+INSERT INTO KocuryT1 VALUES (KocuryO('CHYTRY','M','BOLEK','DZIELCZY',NULL,'2002-05-05',50,NULL,1));
+INSERT INTO KocuryT1 VALUES (KocuryO('KOREK','M','ZOMBI','BANDZIOR',NULL,'2004-03-16',75,13,3));
+INSERT INTO KocuryT1 VALUES (KocuryO('BOLEK','M','LYSY','BANDZIOR',NULL,'2006-08-15',72,21,2));
+INSERT INTO KocuryT1 VALUES (KocuryO('ZUZIA','D','SZYBKA','LOWCZY',NULL,'2006-07-21',65,NULL,2));
+INSERT INTO KocuryT1 VALUES (KocuryO('RUDA','D','MALA','MILUSIA',NULL,'2006-09-17',22,42,1));
+INSERT INTO KocuryT1 VALUES (KocuryO('PUCEK','M','RAFA','LOWCZY',NULL,'2006-10-15',65,NULL,4));
+INSERT INTO KocuryT1 VALUES (KocuryO('PUNIA','D','KURKA','LOWCZY',NULL,'2008-01-01',61,NULL,3));
+INSERT INTO KocuryT1 VALUES (KocuryO('BELA','D','LASKA','MILUSIA',NULL,'2008-02-01',24,28,2));
+INSERT INTO KocuryT1 VALUES (KocuryO('KSAWERY','M','MAN','LAPACZ',NULL,'2008-07-12',51,NULL,4));
+INSERT INTO KocuryT1 VALUES (KocuryO('MELA','D','DAMA','LAPACZ',NULL,'2008-11-01',51,NULL,4));
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'LYSY')
+WHERE imie = 'JACEK';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'LYSY')
+WHERE imie = 'BARI';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'TYGRYS')
+WHERE imie = 'MICKA';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'KURKA')
+WHERE imie = 'LUCEK';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'ZOMBI')
+WHERE imie = 'SONIA';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'RAFA')
+WHERE imie = 'LATKA';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'RAFA')
+WHERE imie = 'DUDEK';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'TYGRYS')
+WHERE imie = 'CHYTRY';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'TYGRYS')
+WHERE imie = 'KOREK';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'TYGRYS')
+WHERE imie = 'BOLEK';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'LYSY')
+WHERE imie = 'ZUZIA';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'TYGRYS')
+WHERE imie = 'ZUZIA';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'TYGRYS')
+WHERE imie = 'PUCEK';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'ZOMBI')
+WHERE imie = 'PUNIA';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'LYSY')
+WHERE imie = 'BELA';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'RAFA')
+WHERE imie = 'KSAWERY';
+
+UPDATE KocuryT1 
+SET szef = (SELECT REF(k) FROM KocuryT1 k WHERE k.pseudo = 'RAFA')
+WHERE imie = 'MELA';
+
+SELECT * FROM dual;
+COMMIT;
+
+INSERT INTO PlebsT
+    SELECT PlebsO(ROWNUM, REF(K))
+    FROM KocuryT1 K
+    WHERE K.funkcja = 'KOT';
+
+INSERT INTO PlebsT (idn, kot)
+SELECT 
+    ROWNUM, 
+    (SELECT REF(K) FROM KocuryT1 K WHERE K.pseudo = 'RAFA')
+FROM dual;
+
+INSERT INTO ElitaT
+    SELECT ElitaO(ROWNUM, REF(K), 
+        (SELECT REF(T) FROM PlebsT T WHERE T.idn = ROWNUM AND K.funkcja = 'KOT'))
+    FROM KocuryT K
+    WHERE DEREF(K).szef.pseudo = 'TYGRYS' OR DEREF(K).szef IS NULL;
+COMMIT;
+
+INSERT INTO WpisT
+  SELECT WpisO(ROWNUM, ADD_MONTHS(CURRENT_DATE, -TRUNC(DBMS_RANDOM.VALUE(0, 12))), NULL, REF(K))
+  FROM ElitaT K;
+COMMIT;
+
+INSERT INTO IncydentT
+VALUES ( 1,
+  (SELECT REF(k) FROM KocuryT k WHERE k.pseudo = 'PLACEK'),
+  'Piesek',
+  DATE '2025-01-01',
+  'Starcie na ulicy'
+);
+
+INSERT INTO IncydentT
+VALUES (2,
+  (SELECT REF(k) FROM KocuryT k WHERE k.pseudo = 'RURA'),
+  'Mysz',
+  DATE '2025-01-10',
+  'Nie udało się złapać'
+);
+
+INSERT INTO IncydentT
+VALUES (3,
+  (SELECT REF(k) FROM KocuryT k WHERE k.pseudo = 'PUSZYSTA'),
+  'Kotka',
+  DATE '2025-01-15',
+  'Walczono o teren'
+);
+
+INSERT INTO IncydentT
+VALUES (4,
+  (SELECT REF(k) FROM KocuryT k WHERE k.pseudo = 'ZERO'),
+  'Drapieżnik',
+  DATE '2025-01-20',
+  'Blisko domu'
+);
+COMMIT;
+
+
+-- JOIN na REF
+SELECT * 
+FROM WpisT w
+JOIN (
+    KocuryT k
+    JOIN ElitaT e 
+    ON e.kot = REF(k)
+) 
+ON w.kot = REF(e);
+
+-- Podzapytanie
+SELECT DEREF(e.kot).imie AS elita_imie,
+       DEREF(e.kot).pseudo AS elita_pseudo
+FROM ElitaT e
+WHERE e.sluga IS NULL;
+
+-- Grupowanie
+SELECT 
+  k.funkcja, 
+  ROUND(AVG(k.pelny_przydzial()), 2) AS sredni_przydzial
+FROM KocuryT k
+GROUP BY k.funkcja
+HAVING AVG(k.pelny_przydzial()) > 50;
+
+
+-- Zad 18.
+SELECT K1.imie, K1.w_stadku_od_format() "Poluje od"
+FROM KocuryT K1 JOIN KocuryT K2 ON K2.imie = 'JACEK'
+WHERE K1.w_stadku_od < K2.w_stadku_od
+ORDER BY K1.w_stadku_od DESC;
+
+-- Zad 23.
+SELECT k.imie, 12 * k.pelny_przydzial(), 'ponizej 864'
+FROM KocuryT k
+WHERE k.myszy_extra IS NOT NULL
+      AND 12 * k.pelny_przydzial() < 864
+
+UNION ALL
+
+SELECT k.imie, 12 * k.pelny_przydzial(), '864'
+FROM KocuryT k
+WHERE myszy_extra IS NOT NULL
+      AND 12 * k.pelny_przydzial() = 864
+
+UNION ALL
+
+SELECT k.imie, 12 * k.pelny_przydzial(), 'powyzej 864'
+FROM KocuryT k
+WHERE k.myszy_extra IS NOT NULL
+      AND 12 * k.pelny_przydzial() > 864
+ORDER BY 2 DESC;
+
+-- Zad 34.
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+  func KocuryT.funkcja%TYPE;
+BEGIN
+  SELECT funkcja INTO func 
+  FROM KocuryT 
+  WHERE funkcja = '&funkcja'
+  GROUP BY funkcja;
+  
+  DBMS_OUTPUT.PUT_LINE(func);
+EXCEPTION
+  WHEN OTHERS THEN  
+    DBMS_OUTPUT.PUT_LINE('BRAK TAKIEGO KOTA');
+END;
+/
+
+-- Zad 35.
+DECLARE
+  v_imie KocuryT.imie%TYPE;
+  v_przydzial_myszy KocuryT.przydzial_myszy%TYPE;
+  v_myszy_extra KocuryT.myszy_extra%TYPE;
+  v_w_stadku_od KocuryT.w_stadku_od%TYPE;
+  nf BOOLEAN := TRUE;
+BEGIN
+  BEGIN
+    SELECT imie, przydzial_myszy, myszy_extra, w_stadku_od 
+    INTO v_imie, v_przydzial_myszy, v_myszy_extra, v_w_stadku_od
+    FROM KocuryT
+    WHERE pseudo = '&pseudo';
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+      DBMS_OUTPUT.PUT_LINE('BRAK TAKIEGO KOTA');
+      RETURN;
+    WHEN TOO_MANY_ROWS THEN
+      DBMS_OUTPUT.PUT_LINE('Więcej niż jeden kot z takim pseudonimem.');
+      RETURN;
+  END;
+
+  IF (v_przydzial_myszy + NVL(v_myszy_extra, 0)) * 12 > 700 THEN
+    nf := FALSE;
+    DBMS_OUTPUT.PUT_LINE('Calkowity roczny przydzial myszy > 700');
+  END IF;
+
+  IF v_imie LIKE '%A%' THEN
+    nf := FALSE;
+    DBMS_OUTPUT.PUT_LINE('Imie zawiera litere A');
+  END IF;
+
+  IF EXTRACT(MONTH FROM v_w_stadku_od) = 5 THEN
+    nf := FALSE;
+    DBMS_OUTPUT.PUT_LINE('Maj jest miesiacem przystapienia do stada');
+  END IF;
+
+  IF nf THEN
+    DBMS_OUTPUT.PUT_LINE('Nie odpowiada kryteriom');
+  END IF;
+
+END;
+/
+
+-- Zad 19a.
+SELECT K.imie "Imie",
+       K.funkcja "Funkcja",
+       K.szef.imie "Szef 1",
+       K.szef.szef.imie "Szef 2",
+       K.szef.szef.szef.imie "Szef 3"
+FROM KocuryT1 K
+WHERE K.funkcja IN ('KOT', 'MILUSIA');
+
+
+-- Zad 49a.
+BEGIN
+    BEGIN
+        EXECUTE IMMEDIATE 'DROP TABLE MYSZY';
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+
+    EXECUTE IMMEDIATE '
+    CREATE TABLE MYSZY(
+        nr_myszy NUMBER(15)     CONSTRAINT m_pk PRIMARY KEY,
+        lowca VARCHAR2(15)      CONSTRAINT m_lowca_fk REFERENCES Kocury(pseudo),
+        zjadacz VARCHAR2(15)    CONSTRAINT m_zjadacz_fk REFERENCES Kocury(pseudo),
+        waga_myszy NUMBER(3)    CONSTRAINT waga_myszy_ogr CHECK (waga_myszy BETWEEN 15 AND 40),
+        data_zlowienia DATE     CONSTRAINT dat_nn NOT NULL,
+        data_wydania DATE,
+        CONSTRAINT daty_popr CHECK (data_zlowienia <= data_wydania)
+    )';
+END;
+/
+CREATE SEQUENCE myszy_seq;
+
+DROP TABLE myszy;
+
+-- Zad 49b.
+DECLARE
+    aktualna_data DATE := TO_DATE('2004-01-01','YYYY-MM-DD');
+    koncowa_data DATE := TO_DATE('2025-01-20','YYYY-MM-DD');
+    ostatnia_sroda DATE := next_day(last_day(aktualna_data) - 7, 'ŚRODA');
+    losowy_dodatek_do_daty BINARY_INTEGER;
+    zjedzonych_myszy NUMBER(10);
+
+    nr_myszy BINARY_INTEGER := 0;
+    indeks_zjadacza NUMBER;
+    losowa_liczba BINARY_INTEGER;
+    liczba BINARY_INTEGER;
+
+    srednio_myszy NUMBER(5);
+
+    TYPE tp IS TABLE OF kocury.pseudo%TYPE;
+    TYPE tk IS TABLE OF NUMBER(5);
+    TYPE tz IS TABLE OF NUMBER(5);
+    TYPE tm IS TABLE OF myszy%rowtype INDEX BY BINARY_INTEGER;
+
+    tab_pseudo tp := tp();
+    tab_zlapanych tz := tz();
+    tab_konsumpcji tk := tk();
+    tab_myszy tm;
+BEGIN
+    LOOP
+        EXIT WHEN aktualna_data >= koncowa_data;
+
+        indeks_zjadacza := 1;
+
+        IF aktualna_data < next_day(last_day(aktualna_data), 'ŚRODA') - 7 THEN
+            ostatnia_sroda := least(next_day(last_day(aktualna_data), 'ŚRODA') - 7, koncowa_data);
+        ELSE
+            ostatnia_sroda := least(next_day(last_day(add_months(aktualna_data, 1)), 'ŚRODA') - 7, koncowa_data);
+        END IF;
+
+        SELECT pseudo, nvl(przydzial_myszy, 0) + nvl(myszy_extra, 0)
+        BULK COLLECT INTO tab_pseudo, tab_konsumpcji
+        FROM KocuryT
+        WHERE w_stadku_od < ostatnia_sroda;
+      
+        SELECT SUM(nvl(przydzial_myszy, 0) + nvl(myszy_extra, 0))
+        INTO zjedzonych_myszy
+        FROM kocury
+        WHERE w_stadku_od < ostatnia_sroda;
+
+        srednio_myszy := ceil(zjedzonych_myszy / tab_pseudo.COUNT);
+
+        FOR I IN 1..tab_pseudo.COUNT LOOP
+         tab_zlapanych.EXTEND;
+         tab_zlapanych(I) := srednio_myszy;
+        END LOOP;
+
+        FOR I IN 1..zjedzonych_myszy
+            LOOP
+                nr_myszy := nr_myszy + 1;
+                tab_myszy(nr_myszy).nr_myszy:= nr_myszy;
+          
+                losowa_liczba := I + dbms_random.VALUE(0, tab_pseudo.COUNT);
+
+                WHILE tab_zlapanych(MOD(losowa_liczba, tab_pseudo.COUNT) + 1) <= 0
+                    LOOP
+                        losowa_liczba := losowa_liczba + 1;
+                    END LOOP;
+
+                liczba := MOD(losowa_liczba, tab_pseudo.COUNT) + 1;
+
+                tab_myszy(nr_myszy).lowca := tab_pseudo(liczba);
+                tab_zlapanych(liczba) := tab_zlapanych(liczba) - 1;
+
+                IF ostatnia_sroda < koncowa_data THEN
+                    tab_myszy(nr_myszy).data_wydania := TRUNC(ostatnia_sroda);
+
+                    IF tab_konsumpcji(indeks_zjadacza) = 0 THEN
+                        indeks_zjadacza := indeks_zjadacza + 1;
+                    ELSE
+                        tab_konsumpcji(indeks_zjadacza) := tab_konsumpcji(indeks_zjadacza) - 1;
+                    END IF;
+       
+                    IF indeks_zjadacza > tab_pseudo.COUNT THEN
+                        indeks_zjadacza := dbms_random.VALUE(1, tab_pseudo.COUNT);
+                    END IF;
+
+                    tab_myszy(nr_myszy).zjadacz := tab_pseudo(indeks_zjadacza);
+                END IF;
+
+                tab_myszy(nr_myszy).waga_myszy := dbms_random.VALUE(15, 40);
+                losowy_dodatek_do_daty := dbms_random.VALUE(0, 30);
+                tab_myszy(nr_myszy).data_zlowienia := aktualna_data + MOD(nr_myszy + losowy_dodatek_do_daty, TRUNC(ostatnia_sroda) - TRUNC(aktualna_data));
+
+            END LOOP;
+
+            aktualna_data := ostatnia_sroda + 1;
+            ostatnia_sroda := next_day(last_day(add_months(aktualna_data, 1)) - 7, 'ŚRODA');
+    END LOOP;
+
+    FORALL I IN 1..tab_myszy.COUNT
+        INSERT INTO myszy(nr_myszy, lowca, zjadacz, waga_myszy, data_zlowienia, data_wydania)
+        VALUES (myszy_seq.NEXTVAL, tab_myszy(I).lowca, tab_myszy(I).zjadacz, tab_myszy(I).waga_myszy, tab_myszy(I).data_zlowienia,
+                tab_myszy(I).data_wydania);
+END;
+/
+
+TRUNCATE TABLE myszy;
+
+
+SELECT COUNT(*) FROM myszy;
+/
+
+BEGIN
+   FOR kot IN (SELECT pseudo FROM kocury)
+    LOOP
+       EXECUTE IMMEDIATE 'CREATE TABLE Konto_osobiste_' || kot.pseudo ||
+         '( nr_myszy NUMBER(10) CONSTRAINT Kos_pk_'     || kot.pseudo || ' PRIMARY KEY,' ||
+           'waga NUMBER(5)      CONSTRAINT Kos_waga_'   || kot.pseudo || ' CHECK (waga BETWEEN 15 AND 40),' ||
+           'data_zlowienia DATE CONSTRAINT Kos_data_nn_'|| kot.pseudo || ' NOT NULL)';
+       END LOOP;
+END;
+/
+
+BEGIN
+    FOR kot IN (SELECT pseudo FROM kocury)
+    LOOP
+        EXECUTE IMMEDIATE 'DROP TABLE Konto_osobiste_' || kot.pseudo;
+        END LOOP;
+END;
+/
+
+CREATE OR REPLACE PROCEDURE przyjmij_na_stan(pseudonim kocury.pseudo%TYPE, data_zlowienia DATE)
+AS
+    TYPE tw IS TABLE OF NUMBER(5);
+    TYPE tn IS TABLE OF NUMBER(10);
+
+    tab_wagi tw := tw();
+    tab_nr tn := tn();
+    pseudo_kota kocury.pseudo%TYPE := UPPER(pseudonim);
+
+    czy_istnieje NUMBER;
+    konto VARCHAR(128);
+
+    brak_kota EXCEPTION;
+    zla_data EXCEPTION;
+    brak_myszy_zlowionych_w_dniu EXCEPTION;
+BEGIN
+
+    SELECT COUNT(*) INTO czy_istnieje
+    FROM kocury
+    WHERE pseudo = pseudo_kota;
+
+    IF czy_istnieje = 0 THEN
+        RAISE brak_kota;
+    END IF;
+
+    konto := 'Konto_osobiste_' || pseudo_kota;
+
+    EXECUTE IMMEDIATE
+        'SELECT nr_myszy, waga
+            FROM Konto_osobiste_'||pseudo_kota||
+            ' WHERE data_zlowienia= '''||data_zlowienia||''''
+        BULK COLLECT INTO tab_nr, tab_wagi;
+
+    IF tab_nr.COUNT = 0 THEN
+        RAISE brak_myszy_zlowionych_w_dniu;
+    END IF;
+
+    FORALL I IN 1..tab_nr.COUNT
+        INSERT INTO myszy VALUES (tab_nr(I), UPPER(pseudo_kota), NULL, tab_wagi(I),data_zlowienia, NULL);
+
+    EXECUTE IMMEDIATE 'DELETE FROM Konto_osobiste_'||pseudo_kota||' WHERE data_zlowienia = '''||data_zlowienia||'''';
+
+    EXCEPTION
+        WHEN brak_kota THEN dbms_output.put_line('Brak kota o pseudonimie '|| UPPER(pseudo_kota));
+        WHEN zla_data THEN dbms_output.put_line('ZLA DATA');
+        WHEN brak_myszy_zlowionych_w_dniu THEN dbms_output.put_line('Brak myszy zlowionych w dniu ' || data_zlowienia || ' przez ' || pseudo_kota);
+END;
+/
+
+CREATE OR REPLACE PROCEDURE wyplata
+AS
+    TYPE tp IS TABLE OF kocury.pseudo%TYPE;
+    TYPE tk IS TABLE OF NUMBER(5);
+    TYPE tz IS TABLE OF kocury.pseudo%TYPE INDEX BY BINARY_INTEGER;
+    TYPE tm IS TABLE OF myszy%rowtype;
+
+    tab_pseudo tp := tp();
+    tab_konsumpcji tk := tk();
+    tab_zjadaczy tz;
+    tab_myszy tm;
+
+    aktualna_data_wydania DATE := TRUNC(next_day(last_day(sysdate)-7, 'ŚRODA'));
+
+    liczba_najedzonych NUMBER(2) := 0;
+    indeks_zjadacza NUMBER(2) := 1;
+    juz_wyplacone NUMBER(5);
+
+    ponowna_wyplata EXCEPTION;
+    brak_myszy_do_wyplacenia EXCEPTION;
+BEGIN
+    SELECT pseudo, nvl(przydzial_myszy,0) + nvl(myszy_extra, 0)
+    BULK COLLECT INTO tab_pseudo, tab_konsumpcji
+    FROM kocury CONNECT BY PRIOR pseudo = szef
+    START WITH szef IS NULL
+    ORDER BY LEVEL;
+
+    SELECT COUNT(nr_myszy) INTO juz_wyplacone
+    FROM myszy
+    WHERE data_wydania = aktualna_data_wydania;
+
+    IF juz_wyplacone > 0 THEN
+        RAISE ponowna_wyplata;
+    END IF;
+
+    SELECT *
+    BULK COLLECT INTO tab_myszy
+    FROM myszy
+    WHERE data_wydania IS NULL;
+
+    IF tab_myszy.COUNT < 1 THEN
+        RAISE brak_myszy_do_wyplacenia;
+    END IF;
+
+    FOR I IN 1..tab_myszy.COUNT
+        LOOP
+            WHILE tab_konsumpcji(indeks_zjadacza) = 0 AND liczba_najedzonych < tab_pseudo.COUNT
+                LOOP
+                    liczba_najedzonych := liczba_najedzonych + 1;
+                    indeks_zjadacza := MOD(indeks_zjadacza + 1, tab_pseudo.COUNT) + 1;
+                END LOOP;
+
+            IF liczba_najedzonych = tab_pseudo.COUNT THEN
+                tab_zjadaczy(I) := 'TYGRYS';
+            ELSE
+                tab_zjadaczy(I) := tab_pseudo(indeks_zjadacza);
+                tab_konsumpcji(indeks_zjadacza) := tab_konsumpcji(indeks_zjadacza) - 1;
+            END IF;
+
+            IF next_day(last_day(tab_myszy(I).data_zlowienia)-7, 'ŚRODA') < tab_myszy(I).data_zlowienia THEN
+                tab_myszy(I).data_wydania := next_day(last_day(add_months(tab_myszy(I).data_zlowienia,1))-7, 'ŚRODA');
+            ELSE
+                tab_myszy(I).data_wydania := next_day(last_day(tab_myszy(I).data_wydania)-7, 'ŚRODA');
+            END IF;
+        END LOOP;
+    FORALL I IN 1..tab_myszy.COUNT
+            UPDATE myszy SET data_wydania=aktualna_data_wydania , zjadacz=tab_zjadaczy(I)
+            WHERE nr_myszy=tab_myszy(I).nr_myszy;
+    COMMIT;
+    EXCEPTION
+            WHEN ponowna_wyplata THEN dbms_output.put_line('Nie mozna wyplacic 2 razy w jednym miesiacu.');
+            WHEN brak_myszy_do_wyplacenia THEN dbms_output.put_line('Brak myszy do wyplacenia.');
+END;
+/
+ 
+INSERT INTO konto_osobiste_lysy VALUES(myszy_seq.NEXTVAL, 15, '2025-01-13');
+INSERT INTO konto_osobiste_lysy VALUES(myszy_seq.NEXTVAL, 25, '2025-01-12');
+INSERT INTO konto_osobiste_lysy VALUES(myszy_seq.NEXTVAL, 16, '2025-01-13');
+INSERT INTO konto_osobiste_lysy VALUES(myszy_seq.NEXTVAL, 20, '2025-01-13');
+
+INSERT INTO konto_osobiste_tygrys VALUES(myszy_seq.NEXTVAL, 31, '2025-01-01');
+INSERT INTO konto_osobiste_tygrys VALUES(myszy_seq.NEXTVAL, 30, '2025-01-01');
+INSERT INTO konto_osobiste_tygrys VALUES(myszy_seq.NEXTVAL, 34, '2025-01-10');
+INSERT INTO konto_osobiste_tygrys VALUES(myszy_seq.NEXTVAL, 26, '2025-02-13');
+INSERT INTO konto_osobiste_tygrys VALUES(myszy_seq.NEXTVAL, 28, '2025-01-13');
+/
+
+BEGIN
+    przyjmij_na_stan('LYSY', '2025-01-10');
+END;
+/
+
+BEGIN
+    przyjmij_na_stan('TYGRYS', '2025-02-13');
+END;
+/
+SELECT * FROM konto_osobiste_tygrys;
+SELECT * FROM konto_osobiste_lysy;
+/
+BEGIN
+    wyplata();
+END;
+/
+ROLLBACK;
+/
+SELECT *
+FROM myszy
+WHERE data_wydania > '2025-01-01';
+
+SELECT * FROM myszy WHERE data_zlowienia = NULL; 
